@@ -104,7 +104,7 @@ def paige_instructions(context) -> str:
 
 root_agent = Agent(
     name="paige",
-    model="gemini-3.5-flash-lite",
+    model="gemini-3.1-flash-lite",
     description="Paige, the friendly customer support agent for PaperLeaf Books.",
     instruction=paige_instructions,
     tools=[create_ticket],
