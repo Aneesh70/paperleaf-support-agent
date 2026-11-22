@@ -57,3 +57,38 @@ ORDERS = [
     ("PL-1011", 6, "Delivered", "Credit card", "2026-11-06 19:20", "2026-11-10 11:45", [(25, 1), (29, 1)]),
     ("PL-1012", 6, "Shipped", "UPI", "2026-11-20 14:15", None, [(5, 1)]),
 ]
+
+
+# Open Library cover image ids, checked to load. Books missing here show a styled placeholder instead.
+COVER_IDS = {
+    "The Midnight Library": 10313767,
+    "Atomic Habits": 12539702,
+    "The Alchemist": 15075893,
+    "Sapiens": 8634250,
+    "The God of Small Things": 10513792,
+    "Wings of Fire": 9153819,
+    "Malgudi Days": 7981639,
+    "The White Tiger": 2787359,
+    "Train to Pakistan": 568646,
+    "Rich Dad Poor Dad": 8315603,
+    "Ikigai": 11300391,
+    "Harry Potter and the Philosopher's Stone": 15155833,
+    "The Hobbit": 14627509,
+    "A Brief History of Time": 10432365,
+    "NCERT Mathematics Class 10": 11326611,
+    "Concepts of Physics Vol 1": 8631889,
+    "Python Crash Course": 8245395,
+    "The Pragmatic Programmer": 10143650,
+    "Gitanjali": 940098,
+    "Chanakya's Chant": 15272921,
+    "The Palace of Illusions": 2412074,
+    "Discovery of India": 128122,
+    "The Immortals of Meluha": 11152324,
+    "India After Gandhi": 6821235,
+    "Panchatantra Stories": 11936600,
+    "The Monk Who Sold His Ferrari": 48817,
+    "Thinking, Fast and Slow": 13290711,
+    "Cosmos": 8283901,
+    "Sherlock Holmes: Complete Stories": 12501284,
+}
+COVER_URL = "https://covers.openlibrary.org/b/id/{id}-L.jpg"

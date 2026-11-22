@@ -95,3 +95,11 @@ def test_create_order_rejects_bad_requests_and_keeps_stock():
         except db.OrderError:
             pass
     assert db.get_book(4)["stock"] == stock  # nothing was taken from stock
+
+
+def test_books_have_cover_images():
+    books = db.list_books()
+    with_cover = [b for b in books if b["cover_url"]]
+    assert len(with_cover) >= 25  # nearly every book has a real cover
+    assert all(b["cover_url"].startswith("https://covers.openlibrary.org/b/id/") and b["cover_url"].endswith("-L.jpg") for b in with_cover)
+    assert db.get_book(1)["cover_url"]

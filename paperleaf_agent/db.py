@@ -9,7 +9,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
 
 from . import seed_data
@@ -76,7 +76,7 @@ def _schema(dialect: str) -> list[str]:
             id {pk}, title TEXT NOT NULL, author TEXT NOT NULL, genre TEXT NOT NULL,
             price INTEGER NOT NULL,
             condition TEXT NOT NULL CHECK (condition IN ('New','Like New','Good')),
-            stock INTEGER NOT NULL DEFAULT 0)""",
+            stock INTEGER NOT NULL DEFAULT 0, cover_url TEXT)""",
         f"""CREATE TABLE IF NOT EXISTS customers (
             id {pk}, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, city TEXT NOT NULL,
             password_hash TEXT NOT NULL)""",
@@ -101,6 +101,10 @@ def _init_schema_and_seed(engine: Engine) -> None:
     with engine.begin() as conn:
         for stmt in _schema(dialect):
             conn.execute(text(stmt))
+        # Databases created before book covers existed get the new column added here.
+        if "cover_url" not in {c["name"] for c in inspect(conn).get_columns("books")}:
+            conn.execute(text("ALTER TABLE books ADD COLUMN cover_url TEXT"))
+        _fill_covers(conn)
         if conn.execute(text("SELECT COUNT(*) FROM books")).scalar_one() > 0:
             return  # already seeded
         for b in seed_data.BOOKS:
@@ -109,6 +113,7 @@ def _init_schema_and_seed(engine: Engine) -> None:
                      "VALUES (:t, :a, :g, :p, :c, :s)"),
                 dict(zip("tagpcs", b)),
             )
+        _fill_covers(conn)
         pw_hash = hash_password(DEMO_PASSWORD)
         for name, email, city in seed_data.CUSTOMERS:
             conn.execute(
@@ -130,6 +135,15 @@ def _init_schema_and_seed(engine: Engine) -> None:
                 )
         if dialect == "sqlite":
             conn.execute(text("INSERT INTO sqlite_sequence (name, seq) VALUES ('tickets', 1000)"))  # first ticket TKT-1001
+
+
+def _fill_covers(conn) -> None:
+    """Give every known book its cover image address (only where it is still empty)."""
+    for title, cover_id in seed_data.COVER_IDS.items():
+        conn.execute(
+            text("UPDATE books SET cover_url = :u WHERE title = :t AND cover_url IS NULL"),
+            {"u": seed_data.COVER_URL.format(id=cover_id), "t": title},
+        )
 
 
 def _rows(sql: str, params: dict | None = None) -> list[dict]:
@@ -308,7 +322,7 @@ def get_book(book_id: int) -> dict | None:
 
 
 def search_books(query: str = "", genre: str = "", max_price: int = 0, limit: int = 5) -> list[dict]:
-    sql = "SELECT title, author, genre, price, condition, stock FROM books WHERE stock > 0"
+    sql = "SELECT title, author, genre, price, condition, stock, cover_url FROM books WHERE stock > 0"
     params: dict = {"lim": limit}
     if query:
         sql += " AND (lower(title) LIKE :q OR lower(author) LIKE :q OR lower(genre) LIKE :q)"

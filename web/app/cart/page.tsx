@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PAYMENT_METHODS, placeOrder, quoteOrder, type PlacedOrder, type Pricing } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import BookCover from "@/components/BookCover";
 import { useCart } from "@/lib/cart";
 
 export default function CartPage() {
@@ -108,7 +109,8 @@ export default function CartPage() {
         <ul className="space-y-3">
           {lines.map((l) => (
             <li key={l.bookId} className="flex items-center justify-between gap-3 rounded-lg border border-stone-200 bg-white p-4">
-              <div className="min-w-0">
+              <BookCover id={l.bookId} title={l.title} author={l.author} coverUrl={l.coverUrl} size="thumb" />
+              <div className="min-w-0 flex-1">
                 <Link href={`/books/${l.bookId}`} className="block truncate font-semibold text-stone-900 hover:underline">
                   {l.title}
                 </Link>

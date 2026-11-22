@@ -8,6 +8,7 @@ export type Book = {
   price: number;
   condition: "New" | "Like New" | "Good";
   stock: number;
+  cover_url: string | null;
 };
 
 export type OrderSummary = {

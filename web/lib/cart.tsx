@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { Book } from "./api";
 
-export type CartLine = { bookId: number; title: string; author: string; price: number; stock: number; qty: number };
+export type CartLine = { bookId: number; title: string; author: string; price: number; stock: number; qty: number; coverUrl?: string | null };
 
 type Cart = {
   lines: CartLine[];
@@ -44,9 +44,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       const limit = Math.min(MAX_PER_BOOK, book.stock);
       const existing = cur.find((l) => l.bookId === book.id);
       if (existing) {
-        return cur.map((l) => (l.bookId === book.id ? { ...l, stock: book.stock, qty: Math.min(limit, l.qty + qty) } : l));
+        return cur.map((l) => (l.bookId === book.id ? { ...l, stock: book.stock, coverUrl: book.cover_url, qty: Math.min(limit, l.qty + qty) } : l));
       }
-      return [...cur, { bookId: book.id, title: book.title, author: book.author, price: book.price, stock: book.stock, qty: Math.min(limit, qty) }];
+      return [...cur, { bookId: book.id, title: book.title, author: book.author, price: book.price, stock: book.stock, coverUrl: book.cover_url, qty: Math.min(limit, qty) }];
     });
   }, []);
 

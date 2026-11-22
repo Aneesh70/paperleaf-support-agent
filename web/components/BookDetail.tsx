@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { getBook, type Book } from "@/lib/api";
 import AddToCart from "@/components/AddToCart";
+import BookCover from "@/components/BookCover";
 
 export default function BookDetail() {
   const { id } = useParams<{ id: string }>();
@@ -35,7 +36,7 @@ export default function BookDetail() {
         ← All books
       </Link>
       <div className="mt-4 grid gap-8 rounded-xl border border-stone-200 bg-white p-6 shadow-sm sm:grid-cols-[14rem_1fr]">
-        <div className="flex h-56 items-center justify-center rounded bg-gradient-to-br from-emerald-50 to-amber-50 text-7xl">📖</div>
+        <BookCover id={book.id} title={book.title} author={book.author} coverUrl={book.cover_url} size="detail" />
         <div>
           <h1 className="text-2xl font-bold">{book.title}</h1>
           <p className="text-stone-600">by {book.author}</p>
