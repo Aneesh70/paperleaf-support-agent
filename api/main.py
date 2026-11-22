@@ -1,0 +1,106 @@
+"""FastAPI backend that wraps the same ADK agent (Paige) for the Next.js frontend.
+
+Run from the project root:  uvicorn api.main:app --reload --port 8100
+"""
+import csv
+import os
+import uuid
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+
+BASE = Path(__file__).resolve().parent.parent
+load_dotenv(BASE / "paperleaf_agent" / ".env")
+
+from google.adk.runners import InMemoryRunner  # noqa: E402
+from google.genai import types  # noqa: E402
+
+from paperleaf_agent.agent import root_agent  # noqa: E402
+from paperleaf_agent.tickets import TICKETS_FILE  # noqa: E402
+
+APP_NAME = "paperleaf_api"
+GREETING = "Hello, I'm Paige from PaperLeaf Books. How can I help you today?"
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.runner = InMemoryRunner(agent=root_agent, app_name=APP_NAME)
+    yield
+
+
+app = FastAPI(title="PaperLeaf Books API", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=1000)
+    session_id: str | None = None
+
+
+class ChatResponse(BaseModel):
+    session_id: str
+    reply: str
+    ticket_id: str | None = None
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.get("/greeting")
+def greeting():
+    return {"greeting": GREETING}
+
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(req: ChatRequest):
+    runner: InMemoryRunner = app.state.runner
+    session_id = req.session_id
+    if not session_id or not await runner.session_service.get_session(
+        app_name=APP_NAME, user_id="web", session_id=session_id
+    ):
+        session = await runner.session_service.create_session(app_name=APP_NAME, user_id="web")
+        session_id = session.id
+
+    reply, ticket_id = "", None
+    try:
+        async for event in runner.run_async(
+            user_id="web",
+            session_id=session_id,
+            new_message=types.Content(role="user", parts=[types.Part(text=req.message)]),
+        ):
+            # Pick up the ticket ID straight from the tool result (code-made, never from the model).
+            for fr in event.get_function_responses() or []:
+                if fr.name == "create_ticket":
+                    resp = fr.response or {}
+                    ticket_id = resp.get("result") if isinstance(resp, dict) else str(resp)
+            if event.content and event.content.parts:
+                reply += "".join(p.text or "" for p in event.content.parts if p.text)
+    except Exception as e:
+        msg = str(e)
+        if any(k in msg for k in ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE")):
+            raise HTTPException(503, "Paige is busy right now. Please try again in a minute.")
+        raise HTTPException(500, "Something went wrong on our side.")
+    return ChatResponse(session_id=session_id, reply=reply.strip(), ticket_id=ticket_id)
+
+
+@app.get("/tickets")
+def tickets(status: str | None = None):
+    if not Path(TICKETS_FILE).exists():
+        return []
+    with open(TICKETS_FILE, newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    if status:
+        rows = [r for r in rows if r.get("status") == status]
+    return list(reversed(rows))
