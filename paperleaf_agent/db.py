@@ -250,3 +250,64 @@ def search_books(query: str = "", genre: str = "", max_price: int = 0, limit: in
         return [dict(r) for r in conn.execute(sql, args).fetchall()]
     finally:
         conn.close()
+
+
+# ---------- staff dashboard ----------
+TICKET_STATUSES = ("open", "in_progress", "closed")
+
+
+def update_ticket_status(ticket_id: str, status: str) -> dict | None:
+    if status not in TICKET_STATUSES:
+        raise ValueError("bad status")
+    try:
+        num = int(ticket_id.upper().removeprefix("TKT-"))
+    except ValueError:
+        return None
+    conn = get_conn()
+    try:
+        with conn:
+            cur = conn.execute("UPDATE tickets SET status = ? WHERE id = ?", (status, num))
+            if cur.rowcount == 0:
+                return None
+    finally:
+        conn.close()
+    return next((t for t in list_tickets() if t["ticket_id"] == f"TKT-{num}"), None)
+
+
+def reason_group(reason: str) -> str:
+    r = reason.lower()
+    if "refund" in r or "return" in r:
+        return "Refund or return above ₹2,000"
+    if "damag" in r or "wrong" in r or "broken" in r:
+        return "Damaged or wrong item"
+    if "angry" in r or "upset" in r:
+        return "Angry or upset customer"
+    if "person" in r or "human" in r or "agent" in r:
+        return "Asked for a person"
+    if "faq" in r or "answer" in r or "unknown" in r:
+        return "Answer not in FAQ"
+    return "Other"
+
+
+def ticket_stats(days: int = 7) -> dict:
+    from collections import Counter
+    from datetime import date, timedelta
+
+    tickets = list_tickets()
+    by_status = Counter(t["status"] for t in tickets)
+    by_priority = Counter(t["priority"] for t in tickets if t["status"] != "closed")
+    by_reason = Counter(reason_group(t["reason"]) for t in tickets)
+    per_day = Counter(t["time"][:10] for t in tickets)
+    today = date.today()
+    daily = [
+        {"date": (today - timedelta(days=i)).isoformat(),
+         "count": per_day.get((today - timedelta(days=i)).isoformat(), 0)}
+        for i in range(days - 1, -1, -1)
+    ]
+    return {
+        "total": len(tickets),
+        "by_status": {s: by_status.get(s, 0) for s in TICKET_STATUSES},
+        "open_by_priority": {"high": by_priority.get("high", 0), "normal": by_priority.get("normal", 0)},
+        "by_reason": [{"reason": k, "count": v} for k, v in by_reason.most_common()],
+        "per_day": daily,
+    }

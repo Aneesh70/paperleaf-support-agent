@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -132,9 +132,52 @@ async def chat(req: ChatRequest, authorization: str | None = Header(default=None
     return ChatResponse(session_id=session_id, reply=reply.strip(), ticket_id=ticket_id)
 
 
-@app.get("/tickets")
-def tickets(status: str | None = None):
+# ---------- staff dashboard (passcode-protected) ----------
+ADMIN_PASSCODE = os.environ.get("ADMIN_PASSCODE", "admin-demo")  # set ADMIN_PASSCODE in production
+ADMIN_TOKENS: set[str] = set()
+
+
+def require_admin(authorization: str | None = Header(default=None)) -> None:
+    if not (authorization and authorization.lower().startswith("bearer ")
+            and authorization[7:].strip() in ADMIN_TOKENS):
+        raise HTTPException(401, "Staff sign-in required")
+
+
+class AdminLogin(BaseModel):
+    passcode: str
+
+
+class StatusUpdate(BaseModel):
+    status: str
+
+
+@app.post("/admin/login")
+def admin_login(req: AdminLogin):
+    if not secrets.compare_digest(req.passcode, ADMIN_PASSCODE):
+        raise HTTPException(401, "Wrong passcode")
+    token = secrets.token_urlsafe(24)
+    ADMIN_TOKENS.add(token)
+    return {"token": token}
+
+
+@app.get("/admin/tickets", dependencies=[Depends(require_admin)])
+def admin_tickets(status: str | None = None):
     return db.list_tickets(status)
+
+
+@app.patch("/admin/tickets/{ticket_id}", dependencies=[Depends(require_admin)])
+def admin_update_ticket(ticket_id: str, body: StatusUpdate):
+    if body.status not in db.TICKET_STATUSES:
+        raise HTTPException(422, f"status must be one of {db.TICKET_STATUSES}")
+    updated = db.update_ticket_status(ticket_id, body.status)
+    if not updated:
+        raise HTTPException(404, "Ticket not found")
+    return updated
+
+
+@app.get("/admin/stats", dependencies=[Depends(require_admin)])
+def admin_stats():
+    return db.ticket_stats()
 
 
 @app.get("/books")
