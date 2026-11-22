@@ -8,3 +8,4 @@ tickets.csv
 .adk/
 data/
 deploy-secrets.txt
+deploy-generated.txt
