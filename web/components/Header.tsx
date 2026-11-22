@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
+import { useCart } from "@/lib/cart";
 
 export default function Header() {
   const { name, ready, signOut } = useAuth();
+  const { count } = useCart();
   return (
     <header className="border-b border-stone-200 bg-white/80 backdrop-blur sticky top-0 z-10">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
@@ -15,12 +17,15 @@ export default function Header() {
           <Link href="/books" className="hover:text-emerald-700">
             Books
           </Link>
+          <Link href="/cart" className="font-medium hover:text-emerald-700">
+            🛒 Cart{count > 0 && <span className="ml-1 rounded-full bg-emerald-700 px-2 py-0.5 text-xs text-white">{count}</span>}
+          </Link>
           {ready && name ? (
             <>
               <Link href="/orders" className="hover:text-emerald-700">
                 My orders
               </Link>
-              <span className="hidden text-stone-500 sm:inline">Hi, {name.split(" ")[0]}</span>
+              <span className="hidden text-stone-600 sm:inline">Hi, {name.split(" ")[0]}</span>
               <button onClick={signOut} className="rounded border border-stone-300 px-2 py-1 hover:bg-stone-100">
                 Sign out
               </button>

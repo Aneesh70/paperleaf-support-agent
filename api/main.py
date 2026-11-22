@@ -95,6 +95,44 @@ def my_orders(authorization: str | None = Header(default=None)):
     return db.list_orders_for_customer(customer_id)
 
 
+# ---------- buying books ----------
+class CartLine(BaseModel):
+    book_id: int
+    qty: int = Field(ge=1, le=10)
+
+
+class OrderRequest(BaseModel):
+    items: list[CartLine] = Field(min_length=1, max_length=30)
+    payment_method: str
+
+
+@app.post("/orders", status_code=201)
+def place_order(req: OrderRequest, request: Request, authorization: str | None = Header(default=None)):
+    customer_id = customer_id_from(authorization)
+    if not customer_id:
+        raise HTTPException(401, "Please sign in to place an order")
+    guards.rate_limit(request, "order", limit=10)
+    try:
+        return db.create_order(customer_id, [(i.book_id, i.qty) for i in req.items], req.payment_method)
+    except db.OrderError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/orders/quote")
+def quote(req: OrderRequest):
+    """Price a cart (delivery and cash-on-delivery rules) without placing it."""
+    subtotal = 0
+    for i in req.items:
+        book = db.get_book(i.book_id)
+        if not book:
+            raise HTTPException(400, "A book in your cart no longer exists")
+        subtotal += book["price"] * i.qty
+    try:
+        return db.price_order(subtotal, req.payment_method)
+    except db.OrderError as e:
+        raise HTTPException(400, str(e))
+
+
 # ---------- chat with Paige ----------
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=1000)

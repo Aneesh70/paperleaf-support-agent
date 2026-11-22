@@ -3,7 +3,7 @@ const SERIES = "#2a78d6"; // categorical slot 1 (validated reference palette)
 
 export default function BarList({ rows, emptyText }: { rows: { label: string; value: number }[]; emptyText: string }) {
   const max = Math.max(1, ...rows.map((r) => r.value));
-  if (rows.length === 0) return <p className="text-sm text-stone-500">{emptyText}</p>;
+  if (rows.length === 0) return <p className="text-sm text-stone-600">{emptyText}</p>;
   return (
     <ul className="space-y-2">
       {rows.map((r) => (

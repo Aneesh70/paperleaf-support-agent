@@ -94,3 +94,19 @@ def test_invented_ticket_ids_are_detected():
     assert invented_ticket("Your ticket ID is TKT-4521.", "TKT-1001")  # wrong ID
     assert not invented_ticket("Your ticket ID is TKT-1001.", "TKT-1001")
     assert not invented_ticket("It is free above 499 (Source: Delivery).", None)
+
+
+def test_place_order_over_the_api(client):
+    body = {"items": [{"book_id": 5, "qty": 1}], "payment_method": "UPI"}
+    assert client.post("/orders", json=body).status_code == 401  # must be signed in
+    h = {"Authorization": f"Bearer {customer_token(client, 'diya.nair@example.com')}"}
+    r = client.post("/orders", json=body, headers=h)
+    assert r.status_code == 201
+    assert (r.json()["subtotal"], r.json()["delivery_fee"], r.json()["total"]) == (349, 49, 398)  # under Rs 499: Rs 49 delivery
+    oid = r.json()["order_id"]
+    assert oid in {o["id"] for o in client.get("/me/orders", headers=h).json()}
+    bad = client.post("/orders", json={"items": [{"book_id": 5, "qty": 1}], "payment_method": "Bitcoin"}, headers=h)
+    assert bad.status_code == 400
+    assert client.post("/orders", json={"items": [], "payment_method": "UPI"}, headers=h).status_code == 422
+    q = client.post("/orders/quote", json={"items": [{"book_id": 5, "qty": 1}], "payment_method": "Cash on delivery"})
+    assert q.status_code == 200 and q.json()["cod_fee"] == 30

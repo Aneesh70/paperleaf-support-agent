@@ -97,7 +97,7 @@ export default function ChatWidget() {
                 </div>
               </div>
             ))}
-            {busy && <div className="text-sm text-stone-400">Paige is typing…</div>}
+            {busy && <div className="text-sm text-stone-600">Paige is typing…</div>}
             {messages.length === 1 && !busy && (
               <div className="flex flex-wrap gap-2 pt-1">
                 {SUGGESTIONS.map((s) => (

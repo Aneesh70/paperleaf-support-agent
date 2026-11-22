@@ -89,3 +89,21 @@ export const adminStats = (token: string) => request<Stats>("/admin/stats", unde
 
 export const adminSetStatus = (token: string, ticketId: string, status: TicketStatus) =>
   request<Ticket>(`/admin/tickets/${ticketId}`, { method: "PATCH", body: JSON.stringify({ status }) }, token);
+
+// ---------- buying ----------
+export const PAYMENT_METHODS = ["UPI", "Credit card", "Debit card", "Net banking", "Cash on delivery"] as const;
+
+export type Pricing = { subtotal: number; delivery_fee: number; cod_fee: number; total: number };
+
+export type PlacedOrder = Pricing & {
+  order_id: string;
+  status: string;
+  payment_method: string;
+  items: { book_id: number; title: string; qty: number; price: number }[];
+};
+
+export const quoteOrder = (items: { book_id: number; qty: number }[], payment_method: string) =>
+  request<Pricing>("/orders/quote", { method: "POST", body: JSON.stringify({ items, payment_method }) });
+
+export const placeOrder = (items: { book_id: number; qty: number }[], payment_method: string, token: string) =>
+  request<PlacedOrder>("/orders", { method: "POST", body: JSON.stringify({ items, payment_method }) }, token);

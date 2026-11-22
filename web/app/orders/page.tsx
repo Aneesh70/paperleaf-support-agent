@@ -41,15 +41,15 @@ export default function OrdersPage() {
   return (
     <div>
       <h1 className="mb-1 text-2xl font-bold">My orders</h1>
-      <p className="mb-5 text-sm text-stone-500">Signed in as {name}. Ask Paige &ldquo;Where is my order PL-…?&rdquo; to check one.</p>
+      <p className="mb-5 text-sm text-stone-600">Signed in as {name}. Ask Paige &ldquo;Where is my order PL-…?&rdquo; to check one.</p>
       {error && <p className="text-sm text-red-600">{error}</p>}
-      {!orders && !error && <p className="text-stone-500">Loading…</p>}
+      {!orders && !error && <p className="text-stone-600">Loading…</p>}
       <div className="space-y-3">
         {orders?.map((o) => (
           <div key={o.id} className="flex items-center justify-between rounded-lg border border-stone-200 bg-white p-4">
             <div>
               <div className="font-semibold">{o.id}</div>
-              <div className="text-sm text-stone-500">Placed {o.placed_at}</div>
+              <div className="text-sm text-stone-600">Placed {o.placed_at}</div>
             </div>
             <div className="text-right">
               <div className="font-semibold text-emerald-800">₹{o.total}</div>
@@ -57,7 +57,7 @@ export default function OrdersPage() {
             </div>
           </div>
         ))}
-        {orders?.length === 0 && <p className="text-stone-500">No orders yet.</p>}
+        {orders?.length === 0 && <p className="text-stone-600">No orders yet.</p>}
       </div>
     </div>
   );

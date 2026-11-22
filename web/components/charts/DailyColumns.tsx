@@ -39,7 +39,7 @@ export default function DailyColumns({ data }: { data: { date: string; count: nu
       </div>
       <div className="mt-1 flex gap-3">
         {data.map((d) => (
-          <span key={d.date} className="flex-1 text-center text-xs text-stone-500">
+          <span key={d.date} className="flex-1 text-center text-xs text-stone-600">
             {new Date(d.date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short" })}
           </span>
         ))}

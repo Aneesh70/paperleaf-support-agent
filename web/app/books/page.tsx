@@ -55,8 +55,8 @@ export default function BooksPage() {
       </div>
 
       {error && <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">Couldn&apos;t load books: {error}</p>}
-      {loading && !error && <p className="text-stone-500">Loading…</p>}
-      {!loading && !error && shown.length === 0 && <p className="text-stone-500">No books match your search.</p>}
+      {loading && !error && <p className="text-stone-600">Loading…</p>}
+      {!loading && !error && shown.length === 0 && <p className="text-stone-600">No books match your search.</p>}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
         {shown.map((b) => (
           <BookCard key={b.id} book={b} />

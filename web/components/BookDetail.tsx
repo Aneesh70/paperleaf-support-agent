@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { getBook, type Book } from "@/lib/api";
+import AddToCart from "@/components/AddToCart";
 
 export default function BookDetail() {
   const { id } = useParams<{ id: string }>();
@@ -26,7 +27,7 @@ export default function BookDetail() {
       </div>
     );
   }
-  if (!book) return <p className="text-stone-500">Loading…</p>;
+  if (!book) return <p className="text-stone-600">Loading…</p>;
 
   return (
     <div>
@@ -43,11 +44,14 @@ export default function BookDetail() {
             <span className="rounded-full bg-emerald-100 px-2 py-1 text-emerald-800">{book.condition}</span>
           </div>
           <p className="mt-5 text-3xl font-semibold text-emerald-800">₹{book.price}</p>
-          <p className="mt-1 text-sm text-stone-500">
+          <p className="mt-1 text-sm text-stone-600">
             {book.stock > 0 ? `${book.stock} in stock` : "Out of stock"} · Free delivery above ₹499, else ₹49 · Gift wrap ₹49
           </p>
-          <p className="mt-6 rounded bg-stone-50 p-3 text-sm text-stone-600">
-            This is a demo store, so there&apos;s no checkout. Ask Paige about delivery, returns or gift wrapping in the chat corner!
+          <div className="mt-6">
+            <AddToCart book={book} large />
+          </div>
+          <p className="mt-4 text-sm text-stone-700">
+            Questions about delivery, returns or gift wrapping? Ask Paige in the chat corner.
           </p>
         </div>
       </div>

@@ -60,3 +60,38 @@ def test_stats_shape():
     assert len(s["per_day"]) == 7
     assert db.reason_group("refund above Rs 2000").startswith("Refund")
     assert db.reason_group("something else") == "Other"
+
+
+def test_order_pricing_rules_from_the_faq():
+    assert db.price_order(300, "UPI") == {"subtotal": 300, "delivery_fee": 49, "cod_fee": 0, "total": 349}
+    assert db.price_order(499, "UPI")["delivery_fee"] == 49  # free only ABOVE 499
+    assert db.price_order(500, "UPI")["delivery_fee"] == 0
+    assert db.price_order(1000, "Cash on delivery")["total"] == 1030  # free delivery + 30 COD fee
+    assert db.price_order(3000, "Cash on delivery")["total"] == 3030
+    for bad in (lambda: db.price_order(3001, "Cash on delivery"), lambda: db.price_order(100, "Bitcoin")):
+        try:
+            bad()
+            raise AssertionError("rule not enforced")
+        except db.OrderError:
+            pass
+
+
+def test_create_order_reduces_stock_and_links_customer():
+    before = db.get_book(3)["stock"]
+    order = db.create_order(1, [(3, 2)], "UPI")  # The Alchemist, Rs 299 each
+    assert order["order_id"].startswith("PL-") and order["total"] == 598 + 0
+    assert db.get_book(3)["stock"] == before - 2
+    mine = db.get_order_for_customer(order["order_id"], 1)
+    assert mine["status"] == "Placed" and mine["items"][0]["qty"] == 2
+    assert db.get_order_for_customer(order["order_id"], 2) is None  # not visible to others
+
+
+def test_create_order_rejects_bad_requests_and_keeps_stock():
+    stock = db.get_book(4)["stock"]
+    for items, pay in (([], "UPI"), ([(4, 0)], "UPI"), ([(4, stock + 1)], "UPI"), ([(9999, 1)], "UPI"), ([(4, 1)], "Bitcoin")):
+        try:
+            db.create_order(1, items, pay)
+            raise AssertionError(f"accepted {items} {pay}")
+        except db.OrderError:
+            pass
+    assert db.get_book(4)["stock"] == stock  # nothing was taken from stock

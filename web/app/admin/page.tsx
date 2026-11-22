@@ -136,7 +136,7 @@ function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void 
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Staff dashboard</h1>
-          <p className="text-sm text-stone-500">Tickets raised by Paige. Refreshes every 10 seconds.</p>
+          <p className="text-sm text-stone-600">Tickets raised by Paige. Refreshes every 10 seconds.</p>
         </div>
         <button onClick={onSignOut} className="rounded border border-stone-300 bg-white px-3 py-1 text-sm hover:bg-stone-100">
           Sign out
@@ -192,7 +192,7 @@ function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void 
 
         <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white">
           <table className="w-full text-left text-sm">
-            <thead className="bg-stone-50 text-xs uppercase text-stone-500">
+            <thead className="bg-stone-50 text-xs uppercase text-stone-600">
               <tr>
                 <th className="px-3 py-2">Ticket</th>
                 <th className="px-3 py-2">Priority</th>
@@ -215,7 +215,7 @@ function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void 
                   </td>
                   <td className="max-w-xs px-3 py-2 text-stone-700">{t.customer_message}</td>
                   <td className="px-3 py-2 text-stone-600">{t.reason}</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-stone-500">{t.time}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-stone-600">{t.time}</td>
                   <td className="px-3 py-2">
                     <select
                       value={t.status}
@@ -234,7 +234,7 @@ function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void 
               ))}
               {loaded && shown.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-stone-500">
+                  <td colSpan={6} className="px-3 py-6 text-center text-stone-600">
                     No tickets here.
                   </td>
                 </tr>

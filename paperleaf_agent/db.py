@@ -218,6 +218,75 @@ def list_orders_for_customer(customer_id: int) -> list[dict]:
     )
 
 
+# ---------- placing orders ----------
+PAYMENT_METHODS = ("UPI", "Credit card", "Debit card", "Net banking", "Cash on delivery")
+FREE_DELIVERY_ABOVE, DELIVERY_FEE = 499, 49
+COD_LIMIT, COD_FEE = 3000, 30
+
+
+class OrderError(ValueError):
+    """A problem the customer can fix (empty cart, out of stock, payment rule...)."""
+
+
+def price_order(subtotal: int, payment_method: str) -> dict:
+    """Delivery and cash-on-delivery rules from the FAQ sheet."""
+    if payment_method not in PAYMENT_METHODS:
+        raise OrderError("Please choose a payment method.")
+    delivery = 0 if subtotal > FREE_DELIVERY_ABOVE else DELIVERY_FEE
+    cod_fee = 0
+    if payment_method == "Cash on delivery":
+        if subtotal > COD_LIMIT:
+            raise OrderError(f"Cash on delivery is available only for orders up to ₹{COD_LIMIT:,}.")
+        cod_fee = COD_FEE
+    return {"subtotal": subtotal, "delivery_fee": delivery, "cod_fee": cod_fee, "total": subtotal + delivery + cod_fee}
+
+
+def create_order(customer_id: int, items: list[tuple[int, int]], payment_method: str) -> dict:
+    """Place an order for a signed-in customer. items = [(book_id, qty)]. Stock is checked and reduced atomically."""
+    merged: dict[int, int] = {}
+    for book_id, qty in items:
+        if qty < 1 or qty > 10:
+            raise OrderError("Quantity must be between 1 and 10.")
+        merged[book_id] = merged.get(book_id, 0) + qty
+    if not merged:
+        raise OrderError("Your cart is empty.")
+    if any(q > 10 for q in merged.values()):
+        raise OrderError("You can buy at most 10 copies of one book.")
+
+    with get_engine().begin() as conn:
+        lines, subtotal = [], 0
+        for book_id, qty in merged.items():
+            book = conn.execute(
+                text("SELECT id, title, price, stock FROM books WHERE id = :i"), {"i": book_id}
+            ).mappings().first()
+            if not book:
+                raise OrderError("One of the books in your cart no longer exists.")
+            # Reduce stock only if enough is left (also safe if two customers buy the last copy at once).
+            done = conn.execute(
+                text("UPDATE books SET stock = stock - :q WHERE id = :i AND stock >= :q"), {"q": qty, "i": book_id}
+            )
+            if done.rowcount == 0:
+                raise OrderError(f"Sorry, only {book['stock']} copies of {book['title']} are left.")
+            lines.append({"book_id": book_id, "title": book["title"], "qty": qty, "price": book["price"]})
+            subtotal += book["price"] * qty
+        pricing = price_order(subtotal, payment_method)
+
+        last = conn.execute(text("SELECT MAX(CAST(SUBSTR(id, 4) AS INTEGER)) FROM orders")).scalar()
+        order_id = f"PL-{(last or 1000) + 1}"
+        conn.execute(
+            text("INSERT INTO orders (id, customer_id, status, total, payment_method, placed_at, delivered_at) "
+                 "VALUES (:id, :c, 'Placed', :t, :p, :now, NULL)"),
+            {"id": order_id, "c": customer_id, "t": pricing["total"], "p": payment_method,
+             "now": datetime.now().strftime("%Y-%m-%d %H:%M")},
+        )
+        for ln in lines:
+            conn.execute(
+                text("INSERT INTO order_items VALUES (:o, :b, :q, :p)"),
+                {"o": order_id, "b": ln["book_id"], "q": ln["qty"], "p": ln["price"]},
+            )
+    return {"order_id": order_id, "status": "Placed", "payment_method": payment_method, "items": lines, **pricing}
+
+
 # ---------- books ----------
 def list_books(q: str = "", genre: str = "", condition: str = "") -> list[dict]:
     sql, params = "SELECT * FROM books WHERE 1=1", {}
