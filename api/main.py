@@ -23,7 +23,7 @@ from paperleaf_agent import db  # noqa: E402
 
 APP_NAME = "paperleaf_api"
 GREETING = "Hello, I'm Paige from PaperLeaf Books. How can I help you today?"
-ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001").split(",")
 
 
 @asynccontextmanager
