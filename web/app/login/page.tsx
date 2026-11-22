@@ -14,6 +14,7 @@ export default function LoginPage() {
   const { signIn } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -22,10 +23,10 @@ export default function LoginPage() {
     setBusy(true);
     setError(null);
     try {
-      await signIn(email);
+      await signIn(email, password);
       router.push("/orders");
     } catch {
-      setError("We couldn't find that email. Try one of the demo accounts below.");
+      setError("Wrong email or password.");
     } finally {
       setBusy(false);
     }
@@ -45,17 +46,30 @@ export default function LoginPage() {
             className="mt-1 w-full rounded border border-stone-300 px-3 py-2 outline-none focus:border-emerald-600"
           />
         </label>
+        <label className="block text-sm font-medium">
+          Password
+          <input
+            type="password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="mt-1 w-full rounded border border-stone-300 px-3 py-2 outline-none focus:border-emerald-600"
+          />
+        </label>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <button disabled={busy} className="w-full rounded bg-emerald-700 py-2 text-white hover:bg-emerald-800 disabled:opacity-60">
           {busy ? "Signing in…" : "Sign in"}
         </button>
       </form>
       <div className="mt-4 rounded-lg bg-amber-50 p-4 text-sm text-amber-900">
-        <p className="mb-2 font-medium">Demo accounts (made-up customers, no password):</p>
+        <p className="mb-2 font-medium">Demo accounts (made-up customers). Password for all: paperleaf123</p>
         <ul className="space-y-1">
           {DEMO.map((d) => (
             <li key={d}>
-              <button type="button" onClick={() => setEmail(d)} className="underline">
+              <button type="button" onClick={() => {
+                  setEmail(d);
+                  setPassword("paperleaf123");
+                }} className="underline">
                 {d}
               </button>
             </li>

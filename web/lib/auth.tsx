@@ -7,7 +7,7 @@ type Auth = {
   token: string | null;
   name: string | null;
   ready: boolean;
-  signIn: (email: string) => Promise<void>;
+  signIn: (email: string, password: string) => Promise<void>;
   signOut: () => void;
 };
 
@@ -32,8 +32,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setReady(true);
   }, []);
 
-  const signIn = useCallback(async (email: string) => {
-    const res = await apiLogin(email);
+  const signIn = useCallback(async (email: string, password: string) => {
+    const res = await apiLogin(email, password);
     setToken(res.token);
     setName(res.name);
     localStorage.setItem(KEY, JSON.stringify(res));

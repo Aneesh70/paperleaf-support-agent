@@ -45,8 +45,8 @@ export const getBooks = (params: { q?: string; genre?: string; condition?: strin
 
 export const getBook = (id: string | number) => request<Book>(`/books/${id}`);
 
-export const login = (email: string) =>
-  request<{ token: string; name: string }>("/login", { method: "POST", body: JSON.stringify({ email }) });
+export const login = (email: string, password: string) =>
+  request<{ token: string; name: string }>("/login", { method: "POST", body: JSON.stringify({ email, password }) });
 
 export const getMyOrders = (token: string) => request<OrderSummary[]>("/me/orders", undefined, token);
 

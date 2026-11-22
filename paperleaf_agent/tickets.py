@@ -1,7 +1,9 @@
+from google.adk.tools import ToolContext
+
 from . import db
 
 
-def create_ticket(message: str, reason: str, priority: str) -> str:
+def create_ticket(message: str, reason: str, priority: str, tool_context: ToolContext) -> str:
     """Raise a support ticket so a person from PaperLeaf Books can follow up.
 
     Args:
@@ -18,4 +20,6 @@ def create_ticket(message: str, reason: str, priority: str) -> str:
     if any(k in str(reason).lower() for k in ("refund above", "damaged", "wrong item", "angry", "upset")):
         priority = "high"
     # The ID is made by the database (auto-increment, never reused), not by the model.
-    return db.insert_ticket(message, reason, priority)
+    # If the customer is signed in, link the ticket to their account (taken from the session, never from the model).
+    customer_id = tool_context.state.get("customer_id")
+    return db.insert_ticket(message, reason, priority, customer_id)

@@ -1,259 +1,162 @@
-"""SQLite database for PaperLeaf Books (all data is made up for practice).
+"""PaperLeaf Books database (all data is made up for practice).
 
-Tables: books, customers, orders, order_items, tickets.
-The database file is created and seeded automatically on first use.
+Runs on SQLite locally and on Postgres in production: set DATABASE_URL to use Postgres.
+Tables: books, customers, orders, order_items, tickets. Created and seeded automatically on first use.
 """
-import sqlite3
+import os
 import threading
-from datetime import datetime
+from collections import Counter
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "paperleaf.db"
-_init_lock = threading.Lock()
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS books (
-    id INTEGER PRIMARY KEY,
-    title TEXT NOT NULL,
-    author TEXT NOT NULL,
-    genre TEXT NOT NULL,
-    price INTEGER NOT NULL,            -- rupees
-    condition TEXT NOT NULL CHECK (condition IN ('New','Like New','Good')),
-    stock INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS customers (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
-    email TEXT NOT NULL UNIQUE,
-    city TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS orders (
-    id TEXT PRIMARY KEY,               -- like PL-1001
-    customer_id INTEGER NOT NULL REFERENCES customers(id),
-    status TEXT NOT NULL CHECK (status IN ('Placed','Shipped','Delivered','Cancelled','Returned')),
-    total INTEGER NOT NULL,
-    payment_method TEXT NOT NULL,
-    placed_at TEXT NOT NULL,
-    delivered_at TEXT
-);
-CREATE TABLE IF NOT EXISTS order_items (
-    order_id TEXT NOT NULL REFERENCES orders(id),
-    book_id INTEGER NOT NULL REFERENCES books(id),
-    qty INTEGER NOT NULL,
-    price INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS tickets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,   -- never reused; ticket ID = TKT-<id>
-    time TEXT NOT NULL,
-    customer_message TEXT NOT NULL,
-    reason TEXT NOT NULL,
-    priority TEXT NOT NULL CHECK (priority IN ('normal','high')),
-    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','in_progress','closed')),
-    customer_id INTEGER REFERENCES customers(id)
-);
-"""
+from . import seed_data
+from .security import burn_time, hash_password, verify_password
 
-BOOKS = [
-    ("The Midnight Library", "Matt Haig", "Fiction", 399, "New", 12),
-    ("Atomic Habits", "James Clear", "Self-help", 449, "New", 20),
-    ("The Alchemist", "Paulo Coelho", "Fiction", 299, "New", 25),
-    ("Sapiens", "Yuval Noah Harari", "Non-fiction", 599, "New", 8),
-    ("The God of Small Things", "Arundhati Roy", "Fiction", 349, "New", 10),
-    ("Wings of Fire", "A. P. J. Abdul Kalam", "Biography", 250, "New", 15),
-    ("Malgudi Days", "R. K. Narayan", "Fiction", 220, "New", 18),
-    ("The White Tiger", "Aravind Adiga", "Fiction", 320, "New", 9),
-    ("Train to Pakistan", "Khushwant Singh", "Fiction", 275, "New", 7),
-    ("Rich Dad Poor Dad", "Robert Kiyosaki", "Finance", 350, "New", 14),
-    ("Ikigai", "Hector Garcia", "Self-help", 299, "New", 16),
-    ("Harry Potter and the Philosopher's Stone", "J. K. Rowling", "Children", 499, "New", 11),
-    ("The Hobbit", "J. R. R. Tolkien", "Fantasy", 450, "New", 9),
-    ("A Brief History of Time", "Stephen Hawking", "Science", 399, "New", 6),
-    ("NCERT Mathematics Class 10", "NCERT", "Textbook", 150, "New", 40),
-    ("Concepts of Physics Vol 1", "H. C. Verma", "Textbook", 520, "New", 13),
-    ("Python Crash Course", "Eric Matthes", "Technology", 1999, "New", 5),
-    ("The Pragmatic Programmer", "Hunt & Thomas", "Technology", 2499, "New", 4),
-    ("Gitanjali", "Rabindranath Tagore", "Poetry", 199, "New", 12),
-    ("Chanakya's Chant", "Ashwin Sanghi", "Fiction", 299, "Like New", 3),
-    ("The Palace of Illusions", "Chitra Banerjee Divakaruni", "Fiction", 260, "Like New", 2),
-    ("Godan", "Munshi Premchand", "Fiction", 150, "Good", 4),
-    ("Discovery of India", "Jawaharlal Nehru", "History", 280, "Good", 2),
-    ("The Immortals of Meluha", "Amish Tripathi", "Fantasy", 230, "Like New", 5),
-    ("India After Gandhi", "Ramachandra Guha", "History", 650, "New", 6),
-    ("Panchatantra Stories", "Vishnu Sharma", "Children", 180, "New", 20),
-    ("The Monk Who Sold His Ferrari", "Robin Sharma", "Self-help", 240, "Good", 3),
-    ("Thinking, Fast and Slow", "Daniel Kahneman", "Non-fiction", 420, "Like New", 4),
-    ("Cosmos", "Carl Sagan", "Science", 480, "New", 5),
-    ("Sherlock Holmes: Complete Stories", "Arthur Conan Doyle", "Mystery", 550, "New", 7),
-]
+DEFAULT_SQLITE = Path(__file__).resolve().parent.parent / "data" / "paperleaf.db"
+DEMO_PASSWORD = "paperleaf123"  # every made-up demo customer uses this password
+TICKET_STATUSES = ("open", "in_progress", "closed")
 
-CUSTOMERS = [
-    ("Aarav Mehta", "aarav.mehta@example.com", "Mumbai"),
-    ("Diya Nair", "diya.nair@example.com", "Kochi"),
-    ("Rohan Iyer", "rohan.iyer@example.com", "Bengaluru"),
-    ("Sneha Kulkarni", "sneha.kulkarni@example.com", "Pune"),
-    ("Kabir Singh", "kabir.singh@example.com", "Delhi"),
-    ("Ananya Das", "ananya.das@example.com", "Kolkata"),
-]
-
-# (order_id, customer_id, status, payment, placed_at, delivered_at, [(book_id, qty)])
-ORDERS = [
-    ("PL-1001", 1, "Delivered", "UPI", "2026-11-02 10:15", "2026-11-05 16:40", [(1, 1), (2, 1)]),
-    ("PL-1002", 1, "Shipped", "Credit card", "2026-11-18 09:05", None, [(4, 1)]),
-    ("PL-1003", 2, "Delivered", "Cash on delivery", "2026-11-04 18:30", "2026-11-09 12:10", [(3, 2)]),
-    ("PL-1004", 2, "Placed", "UPI", "2026-11-21 20:45", None, [(12, 1), (26, 1)]),
-    ("PL-1005", 3, "Delivered", "Net banking", "2026-10-28 11:00", "2026-11-01 15:20", [(17, 1), (18, 1)]),
-    ("PL-1006", 3, "Returned", "UPI", "2026-10-20 13:25", "2026-10-24 10:00", [(16, 1)]),
-    ("PL-1007", 4, "Shipped", "Debit card", "2026-11-19 08:50", None, [(8, 1), (9, 1), (10, 1)]),
-    ("PL-1008", 4, "Cancelled", "UPI", "2026-11-12 17:10", None, [(13, 1)]),
-    ("PL-1009", 5, "Delivered", "Cash on delivery", "2026-11-08 12:00", "2026-11-12 14:30", [(15, 3)]),
-    ("PL-1010", 5, "Placed", "UPI", "2026-11-22 09:30", None, [(21, 1), (22, 1)]),
-    ("PL-1011", 6, "Delivered", "Credit card", "2026-11-06 19:20", "2026-11-10 11:45", [(25, 1), (29, 1)]),
-    ("PL-1012", 6, "Shipped", "UPI", "2026-11-20 14:15", None, [(5, 1)]),
-]
+_engine: Engine | None = None
+_ready = False
+_lock = threading.Lock()
 
 
-def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, timeout=10)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+# ---------- engine ----------
+def _database_url() -> str:
+    url = os.environ.get("DATABASE_URL", "").strip()
+    if not url:
+        DEFAULT_SQLITE.parent.mkdir(parents=True, exist_ok=True)
+        return f"sqlite:///{DEFAULT_SQLITE.as_posix()}"
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
+    return url
 
 
-def get_conn() -> sqlite3.Connection:
-    ensure_db()
-    return _connect()
+def reset_engine() -> None:
+    """Forget the current engine (used by tests that switch DATABASE_URL)."""
+    global _engine, _ready
+    with _lock:
+        if _engine is not None:
+            _engine.dispose()
+        _engine, _ready = None, False
 
 
-def ensure_db() -> None:
-    """Create and seed the database on first use."""
-    if DB_PATH.exists():
-        return
-    with _init_lock:
-        if DB_PATH.exists():
-            return
-        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        tmp = DB_PATH.with_suffix(".tmp")
-        tmp.unlink(missing_ok=True)
-        conn = sqlite3.connect(tmp)
-        conn.executescript(SCHEMA)
-        conn.executemany(
-            "INSERT INTO books (title, author, genre, price, condition, stock) VALUES (?,?,?,?,?,?)", BOOKS
-        )
-        conn.executemany("INSERT INTO customers (name, email, city) VALUES (?,?,?)", CUSTOMERS)
-        prices = {i + 1: b[3] for i, b in enumerate(BOOKS)}
-        for oid, cid, status, pay, placed, delivered, items in ORDERS:
+def get_engine() -> Engine:
+    global _engine, _ready
+    with _lock:
+        if _engine is None:
+            url = _database_url()
+            if url.startswith("sqlite"):
+                _engine = create_engine(url, connect_args={"check_same_thread": False})
+            else:
+                _engine = create_engine(url, pool_pre_ping=True, pool_size=5, max_overflow=5)
+        engine = _engine
+        if _ready:
+            return engine
+        _init_schema_and_seed(engine)
+        _ready = True
+    return engine
+
+
+# ---------- schema + seed ----------
+def _schema(dialect: str) -> list[str]:
+    if dialect == "postgresql":
+        pk = "INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY"
+        ticket_pk = "INTEGER GENERATED BY DEFAULT AS IDENTITY (START WITH 1001) PRIMARY KEY"
+    else:
+        pk = "INTEGER PRIMARY KEY"
+        ticket_pk = "INTEGER PRIMARY KEY AUTOINCREMENT"
+    return [
+        f"""CREATE TABLE IF NOT EXISTS books (
+            id {pk}, title TEXT NOT NULL, author TEXT NOT NULL, genre TEXT NOT NULL,
+            price INTEGER NOT NULL,
+            condition TEXT NOT NULL CHECK (condition IN ('New','Like New','Good')),
+            stock INTEGER NOT NULL DEFAULT 0)""",
+        f"""CREATE TABLE IF NOT EXISTS customers (
+            id {pk}, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, city TEXT NOT NULL,
+            password_hash TEXT NOT NULL)""",
+        """CREATE TABLE IF NOT EXISTS orders (
+            id TEXT PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES customers(id),
+            status TEXT NOT NULL CHECK (status IN ('Placed','Shipped','Delivered','Cancelled','Returned')),
+            total INTEGER NOT NULL, payment_method TEXT NOT NULL,
+            placed_at TEXT NOT NULL, delivered_at TEXT)""",
+        """CREATE TABLE IF NOT EXISTS order_items (
+            order_id TEXT NOT NULL REFERENCES orders(id), book_id INTEGER NOT NULL REFERENCES books(id),
+            qty INTEGER NOT NULL, price INTEGER NOT NULL)""",
+        f"""CREATE TABLE IF NOT EXISTS tickets (
+            id {ticket_pk}, time TEXT NOT NULL, customer_message TEXT NOT NULL, reason TEXT NOT NULL,
+            priority TEXT NOT NULL CHECK (priority IN ('normal','high')),
+            status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','in_progress','closed')),
+            customer_id INTEGER REFERENCES customers(id))""",
+    ]
+
+
+def _init_schema_and_seed(engine: Engine) -> None:
+    dialect = engine.dialect.name
+    with engine.begin() as conn:
+        for stmt in _schema(dialect):
+            conn.execute(text(stmt))
+        if conn.execute(text("SELECT COUNT(*) FROM books")).scalar_one() > 0:
+            return  # already seeded
+        for b in seed_data.BOOKS:
+            conn.execute(
+                text("INSERT INTO books (title, author, genre, price, condition, stock) "
+                     "VALUES (:t, :a, :g, :p, :c, :s)"),
+                dict(zip("tagpcs", b)),
+            )
+        pw_hash = hash_password(DEMO_PASSWORD)
+        for name, email, city in seed_data.CUSTOMERS:
+            conn.execute(
+                text("INSERT INTO customers (name, email, city, password_hash) VALUES (:n, :e, :c, :h)"),
+                {"n": name, "e": email, "c": city, "h": pw_hash},
+            )
+        prices = {i + 1: b[3] for i, b in enumerate(seed_data.BOOKS)}
+        for oid, cid, status, pay, placed, delivered, items in seed_data.ORDERS:
             total = sum(prices[b] * q for b, q in items)
             total += 0 if total > 499 else 49  # delivery fee rule from the FAQ
-            conn.execute("INSERT INTO orders VALUES (?,?,?,?,?,?,?)", (oid, cid, status, total, pay, placed, delivered))
-            conn.executemany(
-                "INSERT INTO order_items VALUES (?,?,?,?)", [(oid, b, q, prices[b]) for b, q in items]
+            conn.execute(
+                text("INSERT INTO orders VALUES (:id, :c, :s, :t, :p, :pl, :d)"),
+                {"id": oid, "c": cid, "s": status, "t": total, "p": pay, "pl": placed, "d": delivered},
             )
-        # First ticket will be TKT-1001
-        conn.execute("INSERT INTO sqlite_sequence (name, seq) VALUES ('tickets', 1000)")
-        conn.commit()
-        conn.close()
-        tmp.replace(DB_PATH)
+            for b, q in items:
+                conn.execute(
+                    text("INSERT INTO order_items VALUES (:o, :b, :q, :p)"),
+                    {"o": oid, "b": b, "q": q, "p": prices[b]},
+                )
+        if dialect == "sqlite":
+            conn.execute(text("INSERT INTO sqlite_sequence (name, seq) VALUES ('tickets', 1000)"))  # first ticket TKT-1001
+
+
+def _rows(sql: str, params: dict | None = None) -> list[dict]:
+    with get_engine().connect() as conn:
+        return [dict(r) for r in conn.execute(text(sql), params or {}).mappings().all()]
 
 
 # ---------- tickets ----------
 def insert_ticket(message: str, reason: str, priority: str, customer_id: int | None = None) -> str:
-    conn = get_conn()
-    try:
-        with conn:
-            cur = conn.execute(
-                "INSERT INTO tickets (time, customer_message, reason, priority, status, customer_id) "
-                "VALUES (?,?,?,?, 'open', ?)",
-                (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), message, reason, priority, customer_id),
-            )
-            return f"TKT-{cur.lastrowid}"
-    finally:
-        conn.close()
+    with get_engine().begin() as conn:
+        new_id = conn.execute(
+            text("INSERT INTO tickets (time, customer_message, reason, priority, status, customer_id) "
+                 "VALUES (:t, :m, :r, :p, 'open', :c) RETURNING id"),
+            {"t": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "m": message, "r": reason,
+             "p": priority, "c": customer_id},
+        ).scalar_one()
+    return f"TKT-{new_id}"
 
 
 def list_tickets(status: str | None = None) -> list[dict]:
-    q = "SELECT id, time, customer_message, reason, priority, status, customer_id FROM tickets"
-    args: tuple = ()
+    sql = "SELECT id, time, customer_message, reason, priority, status, customer_id FROM tickets"
+    params: dict = {}
     if status:
-        q += " WHERE status = ?"
-        args = (status,)
-    q += " ORDER BY id DESC"
-    conn = get_conn()
-    try:
-        rows = conn.execute(q, args).fetchall()
-    finally:
-        conn.close()
-    return [
-        {"ticket_id": f"TKT-{r['id']}", **{k: r[k] for k in r.keys() if k != "id"}} for r in rows
-    ]
-
-
-# ---------- customers, orders, books ----------
-def get_customer_by_email(email: str) -> dict | None:
-    conn = get_conn()
-    try:
-        row = conn.execute(
-            "SELECT id, name, email, city FROM customers WHERE lower(email) = lower(?)", (email.strip(),)
-        ).fetchone()
-    finally:
-        conn.close()
-    return dict(row) if row else None
-
-
-def get_order_for_customer(order_id: str, customer_id: int) -> dict | None:
-    """Return the order ONLY if it belongs to this customer (otherwise None, same as 'not found')."""
-    conn = get_conn()
-    try:
-        o = conn.execute(
-            "SELECT id, status, total, payment_method, placed_at, delivered_at FROM orders "
-            "WHERE upper(id) = upper(?) AND customer_id = ?",
-            (order_id.strip(), customer_id),
-        ).fetchone()
-        if not o:
-            return None
-        items = conn.execute(
-            "SELECT b.title, i.qty, i.price FROM order_items i JOIN books b ON b.id = i.book_id "
-            "WHERE i.order_id = ?",
-            (o["id"],),
-        ).fetchall()
-    finally:
-        conn.close()
-    return {**dict(o), "items": [dict(i) for i in items]}
-
-
-def list_orders_for_customer(customer_id: int) -> list[dict]:
-    conn = get_conn()
-    try:
-        rows = conn.execute(
-            "SELECT id, status, total, placed_at FROM orders WHERE customer_id = ? ORDER BY placed_at DESC",
-            (customer_id,),
-        ).fetchall()
-    finally:
-        conn.close()
-    return [dict(r) for r in rows]
-
-
-def search_books(query: str = "", genre: str = "", max_price: int = 0, limit: int = 5) -> list[dict]:
-    sql, args = "SELECT title, author, genre, price, condition, stock FROM books WHERE stock > 0", []
-    if query:
-        sql += " AND (title LIKE ? OR author LIKE ? OR genre LIKE ?)"
-        args += [f"%{query}%"] * 3
-    if genre:
-        sql += " AND genre LIKE ?"
-        args.append(f"%{genre}%")
-    if max_price and max_price > 0:
-        sql += " AND price <= ?"
-        args.append(max_price)
-    sql += " ORDER BY title LIMIT ?"
-    args.append(limit)
-    conn = get_conn()
-    try:
-        return [dict(r) for r in conn.execute(sql, args).fetchall()]
-    finally:
-        conn.close()
-
-
-# ---------- staff dashboard ----------
-TICKET_STATUSES = ("open", "in_progress", "closed")
+        sql += " WHERE status = :s"
+        params["s"] = status
+    rows = _rows(sql + " ORDER BY id DESC", params)
+    return [{"ticket_id": f"TKT-{r.pop('id')}", **r} for r in rows]
 
 
 def update_ticket_status(ticket_id: str, status: str) -> dict | None:
@@ -263,17 +166,94 @@ def update_ticket_status(ticket_id: str, status: str) -> dict | None:
         num = int(ticket_id.upper().removeprefix("TKT-"))
     except ValueError:
         return None
-    conn = get_conn()
-    try:
-        with conn:
-            cur = conn.execute("UPDATE tickets SET status = ? WHERE id = ?", (status, num))
-            if cur.rowcount == 0:
-                return None
-    finally:
-        conn.close()
+    with get_engine().begin() as conn:
+        done = conn.execute(text("UPDATE tickets SET status = :s WHERE id = :i"), {"s": status, "i": num})
+        if done.rowcount == 0:
+            return None
     return next((t for t in list_tickets() if t["ticket_id"] == f"TKT-{num}"), None)
 
 
+# ---------- customers and orders ----------
+def authenticate(email: str, password: str) -> dict | None:
+    """Return the customer if the email and password match, else None."""
+    rows = _rows(
+        "SELECT id, name, email, city, password_hash FROM customers WHERE lower(email) = lower(:e)",
+        {"e": email.strip()},
+    )
+    if not rows:
+        burn_time(password)
+        return None
+    row = rows[0]
+    if not verify_password(password, row.pop("password_hash")):
+        return None
+    return row
+
+
+def get_customer_first_name(customer_id: int) -> str | None:
+    rows = _rows("SELECT name FROM customers WHERE id = :i", {"i": customer_id})
+    return rows[0]["name"].split()[0] if rows else None
+
+
+def get_order_for_customer(order_id: str, customer_id: int) -> dict | None:
+    """Return the order ONLY if it belongs to this customer (otherwise None, same as 'not found')."""
+    orders = _rows(
+        "SELECT id, status, total, payment_method, placed_at, delivered_at FROM orders "
+        "WHERE upper(id) = upper(:o) AND customer_id = :c",
+        {"o": order_id.strip(), "c": customer_id},
+    )
+    if not orders:
+        return None
+    items = _rows(
+        "SELECT b.title, i.qty, i.price FROM order_items i JOIN books b ON b.id = i.book_id "
+        "WHERE i.order_id = :o",
+        {"o": orders[0]["id"]},
+    )
+    return {**orders[0], "items": items}
+
+
+def list_orders_for_customer(customer_id: int) -> list[dict]:
+    return _rows(
+        "SELECT id, status, total, placed_at FROM orders WHERE customer_id = :c ORDER BY placed_at DESC",
+        {"c": customer_id},
+    )
+
+
+# ---------- books ----------
+def list_books(q: str = "", genre: str = "", condition: str = "") -> list[dict]:
+    sql, params = "SELECT * FROM books WHERE 1=1", {}
+    if q:
+        sql += " AND (lower(title) LIKE :q OR lower(author) LIKE :q)"
+        params["q"] = f"%{q.lower()}%"
+    if genre:
+        sql += " AND genre = :g"
+        params["g"] = genre
+    if condition:
+        sql += " AND condition = :c"
+        params["c"] = condition
+    return _rows(sql + " ORDER BY title", params)
+
+
+def get_book(book_id: int) -> dict | None:
+    rows = _rows("SELECT * FROM books WHERE id = :i", {"i": book_id})
+    return rows[0] if rows else None
+
+
+def search_books(query: str = "", genre: str = "", max_price: int = 0, limit: int = 5) -> list[dict]:
+    sql = "SELECT title, author, genre, price, condition, stock FROM books WHERE stock > 0"
+    params: dict = {"lim": limit}
+    if query:
+        sql += " AND (lower(title) LIKE :q OR lower(author) LIKE :q OR lower(genre) LIKE :q)"
+        params["q"] = f"%{query.lower()}%"
+    if genre:
+        sql += " AND lower(genre) LIKE :g"
+        params["g"] = f"%{genre.lower()}%"
+    if max_price and max_price > 0:
+        sql += " AND price <= :mp"
+        params["mp"] = max_price
+    return _rows(sql + " ORDER BY title LIMIT :lim", params)
+
+
+# ---------- staff dashboard stats ----------
 def reason_group(reason: str) -> str:
     r = reason.lower()
     if "refund" in r or "return" in r:
@@ -290,20 +270,16 @@ def reason_group(reason: str) -> str:
 
 
 def ticket_stats(days: int = 7) -> dict:
-    from collections import Counter
-    from datetime import date, timedelta
-
     tickets = list_tickets()
     by_status = Counter(t["status"] for t in tickets)
     by_priority = Counter(t["priority"] for t in tickets if t["status"] != "closed")
     by_reason = Counter(reason_group(t["reason"]) for t in tickets)
     per_day = Counter(t["time"][:10] for t in tickets)
     today = date.today()
-    daily = [
-        {"date": (today - timedelta(days=i)).isoformat(),
-         "count": per_day.get((today - timedelta(days=i)).isoformat(), 0)}
-        for i in range(days - 1, -1, -1)
-    ]
+    daily = []
+    for i in range(days - 1, -1, -1):
+        d = (today - timedelta(days=i)).isoformat()
+        daily.append({"date": d, "count": per_day.get(d, 0)})
     return {
         "total": len(tickets),
         "by_status": {s: by_status.get(s, 0) for s in TICKET_STATUSES},

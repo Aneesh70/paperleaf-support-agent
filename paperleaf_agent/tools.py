@@ -27,7 +27,7 @@ def get_order_status(order_id: str, tool_context: ToolContext) -> dict:
         # Same answer whether the order does not exist or belongs to someone else: no information leaks.
         return {"error": "not_found",
                 "message": "No order with that ID was found on this customer's account."}
-    return order
+    return {**order, "signed_in_as": db.get_customer_first_name(customer_id)}
 
 
 def list_my_orders(tool_context: ToolContext) -> dict:
@@ -36,7 +36,7 @@ def list_my_orders(tool_context: ToolContext) -> dict:
     if not customer_id:
         return {"error": "not_signed_in",
                 "message": "The customer is not signed in. Ask them to sign in."}
-    return {"orders": db.list_orders_for_customer(customer_id)}
+    return {"signed_in_as": db.get_customer_first_name(customer_id), "orders": db.list_orders_for_customer(customer_id)}
 
 
 def search_books(query: str = "", genre: str = "", max_price: int = 0) -> dict:

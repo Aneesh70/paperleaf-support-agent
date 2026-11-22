@@ -1,0 +1,27 @@
+# Render Blueprint for the PaperLeaf Books API (FastAPI + Paige).
+# The Next.js shop is deployed separately on Vercel (see README.md).
+services:
+  - type: web
+    name: paperleaf-api
+    runtime: python
+    region: singapore
+    plan: free
+    branch: feature/stage6
+    buildCommand: pip install -r api/requirements.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: APP_ENV
+        value: production
+      - key: GOOGLE_API_KEY
+        sync: false          # set in the Render dashboard, never in git
+      - key: DATABASE_URL
+        sync: false          # Postgres connection string (e.g. from Neon)
+      - key: ADMIN_PASSCODE
+        sync: false          # staff dashboard passcode (8+ characters)
+      - key: ALLOWED_ORIGINS
+        sync: false          # the shop's URL, e.g. https://paperleaf-books.vercel.app
+      - key: JWT_SECRET
+        generateValue: true  # Render creates a long random secret
