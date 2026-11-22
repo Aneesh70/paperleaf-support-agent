@@ -3,11 +3,12 @@
 Run from the project root:  uvicorn api.main:app --reload --port 8100
 """
 import os
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -40,6 +41,38 @@ app.add_middleware(
 )
 
 
+# Demo sign-in: made-up customers, email only, token kept in memory. (Real auth is a later stage.)
+TOKENS: dict[str, int] = {}
+
+
+class LoginRequest(BaseModel):
+    email: str
+
+
+def customer_from_token(authorization: str | None) -> int | None:
+    if authorization and authorization.lower().startswith("bearer "):
+        return TOKENS.get(authorization[7:].strip())
+    return None
+
+
+@app.post("/login")
+def login(req: LoginRequest):
+    customer = db.get_customer_by_email(req.email)
+    if not customer:
+        raise HTTPException(401, "Unknown email")
+    token = secrets.token_urlsafe(24)
+    TOKENS[token] = customer["id"]
+    return {"token": token, "name": customer["name"]}
+
+
+@app.get("/me/orders")
+def my_orders(authorization: str | None = Header(default=None)):
+    customer_id = customer_from_token(authorization)
+    if not customer_id:
+        raise HTTPException(401, "Please sign in")
+    return db.list_orders_for_customer(customer_id)
+
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
     session_id: str | None = None
@@ -62,13 +95,19 @@ def greeting():
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, authorization: str | None = Header(default=None)):
     runner: InMemoryRunner = app.state.runner
+    customer_id = customer_from_token(authorization)  # None = guest
     session_id = req.session_id
-    if not session_id or not await runner.session_service.get_session(
-        app_name=APP_NAME, user_id="web", session_id=session_id
-    ):
-        session = await runner.session_service.create_session(app_name=APP_NAME, user_id="web")
+    existing = (
+        await runner.session_service.get_session(app_name=APP_NAME, user_id="web", session_id=session_id)
+        if session_id else None
+    )
+    # A session is tied to who opened it: if the sign-in changed, start a fresh one.
+    if not existing or existing.state.get("customer_id") != customer_id:
+        session = await runner.session_service.create_session(
+            app_name=APP_NAME, user_id="web", state={"customer_id": customer_id}
+        )
         session_id = session.id
 
     reply, ticket_id = "", None

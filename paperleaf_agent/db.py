@@ -185,3 +185,68 @@ def list_tickets(status: str | None = None) -> list[dict]:
     return [
         {"ticket_id": f"TKT-{r['id']}", **{k: r[k] for k in r.keys() if k != "id"}} for r in rows
     ]
+
+
+# ---------- customers, orders, books ----------
+def get_customer_by_email(email: str) -> dict | None:
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT id, name, email, city FROM customers WHERE lower(email) = lower(?)", (email.strip(),)
+        ).fetchone()
+    finally:
+        conn.close()
+    return dict(row) if row else None
+
+
+def get_order_for_customer(order_id: str, customer_id: int) -> dict | None:
+    """Return the order ONLY if it belongs to this customer (otherwise None, same as 'not found')."""
+    conn = get_conn()
+    try:
+        o = conn.execute(
+            "SELECT id, status, total, payment_method, placed_at, delivered_at FROM orders "
+            "WHERE upper(id) = upper(?) AND customer_id = ?",
+            (order_id.strip(), customer_id),
+        ).fetchone()
+        if not o:
+            return None
+        items = conn.execute(
+            "SELECT b.title, i.qty, i.price FROM order_items i JOIN books b ON b.id = i.book_id "
+            "WHERE i.order_id = ?",
+            (o["id"],),
+        ).fetchall()
+    finally:
+        conn.close()
+    return {**dict(o), "items": [dict(i) for i in items]}
+
+
+def list_orders_for_customer(customer_id: int) -> list[dict]:
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT id, status, total, placed_at FROM orders WHERE customer_id = ? ORDER BY placed_at DESC",
+            (customer_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [dict(r) for r in rows]
+
+
+def search_books(query: str = "", genre: str = "", max_price: int = 0, limit: int = 5) -> list[dict]:
+    sql, args = "SELECT title, author, genre, price, condition, stock FROM books WHERE stock > 0", []
+    if query:
+        sql += " AND (title LIKE ? OR author LIKE ? OR genre LIKE ?)"
+        args += [f"%{query}%"] * 3
+    if genre:
+        sql += " AND genre LIKE ?"
+        args.append(f"%{genre}%")
+    if max_price and max_price > 0:
+        sql += " AND price <= ?"
+        args.append(max_price)
+    sql += " ORDER BY title LIMIT ?"
+    args.append(limit)
+    conn = get_conn()
+    try:
+        return [dict(r) for r in conn.execute(sql, args).fetchall()]
+    finally:
+        conn.close()

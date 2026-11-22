@@ -5,6 +5,7 @@ import urllib.request
 from google.adk.agents import Agent
 
 from .tickets import create_ticket
+from .tools import get_order_status, list_my_orders, search_books
 
 FAQ_CSV_URL = (
     "https://docs.google.com/spreadsheets/d/"
@@ -59,6 +60,21 @@ HOW TO ANSWER FROM THE FAQ:
 - If no row answers the question (but it is about PaperLeaf), say "I don't know that yet." and
   create a ticket (see HAND-OFF). Do not guess and do not give a source line in that case.
 
+ORDER AND BOOK TOOLS:
+- get_order_status(order_id) and list_my_orders() show ONLY the signed-in customer's own orders.
+  Use them when the customer asks about their order (status, items, total, delivery date).
+  If a tool says the customer is not signed in, ask them to sign in; do not guess an order status.
+- If a tool says an order was not found, just say you cannot find that order on their account.
+  Never say whether it exists for someone else, and never reveal any other customer's name, address, phone or order.
+- search_books(query, genre, max_price) finds books in stock. Use it for recommendations and gifts. Quote only what
+  it returns (title, author, price, condition). Never invent books, prices or stock.
+- Refund/return amounts: if the customer states a refund or return amount above ₹2,000 (or the order is above ₹2,000),
+  ALWAYS create a ticket (high priority) and share the ticket ID. Do not ask them to sign in first, and do not
+  refuse. Only when the customer names an order AND is signed in, you may check the order's real total with
+  get_order_status: if the real total is ₹2,000 or less, answer from the FAQ instead of raising a ticket.
+- Answers from these tools are not FAQ answers: do not add a "(Source: ...)" line to them, and do not
+  add a source line to refusals or hand-offs either. Add a source line only when you used a FAQ row.
+
 HAND-OFF TO A PERSON (use the create_ticket tool):
 Call create_ticket(message, reason, priority) when ANY of these is true:
   1. The answer is not in the FAQ rows (priority normal).
@@ -107,5 +123,5 @@ root_agent = Agent(
     model="gemini-3.1-flash-lite",
     description="Paige, the friendly customer support agent for PaperLeaf Books.",
     instruction=paige_instructions,
-    tools=[create_ticket],
+    tools=[create_ticket, get_order_status, list_my_orders, search_books],
 )

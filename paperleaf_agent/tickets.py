@@ -14,5 +14,8 @@ def create_ticket(message: str, reason: str, priority: str) -> str:
         The ticket ID, like TKT-1001. Share this ID with the customer.
     """
     priority = "high" if str(priority).strip().lower() == "high" else "normal"
+    # Safety net in code: these reasons are always high priority, whatever the model chose.
+    if any(k in str(reason).lower() for k in ("refund above", "damaged", "wrong item", "angry", "upset")):
+        priority = "high"
     # The ID is made by the database (auto-increment, never reused), not by the model.
     return db.insert_ticket(message, reason, priority)
