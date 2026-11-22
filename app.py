@@ -1,5 +1,4 @@
 import asyncio
-import csv
 import os
 import threading
 import uuid
@@ -8,7 +7,6 @@ from pathlib import Path
 import streamlit as st
 
 BASE = Path(__file__).parent
-TICKETS_FILE = BASE / "tickets.csv"
 GREETING = "Hello, I'm Paige from PaperLeaf Books. How can I help you today?"
 
 st.set_page_config(page_title="PaperLeaf Books Support", page_icon="📚")
@@ -77,10 +75,9 @@ def new_session(runner) -> str:
 
 
 def open_tickets():
-    if not TICKETS_FILE.exists():
-        return []
-    with open(TICKETS_FILE, newline="", encoding="utf-8") as f:
-        return [r for r in csv.DictReader(f) if r.get("status") == "open"]
+    from paperleaf_agent import db
+
+    return db.list_tickets("open")[::-1]
 
 
 # ---------- page ----------

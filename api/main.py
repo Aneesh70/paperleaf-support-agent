@@ -2,9 +2,7 @@
 
 Run from the project root:  uvicorn api.main:app --reload --port 8100
 """
-import csv
 import os
-import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -20,7 +18,7 @@ from google.adk.runners import InMemoryRunner  # noqa: E402
 from google.genai import types  # noqa: E402
 
 from paperleaf_agent.agent import root_agent  # noqa: E402
-from paperleaf_agent.tickets import TICKETS_FILE  # noqa: E402
+from paperleaf_agent import db  # noqa: E402
 
 APP_NAME = "paperleaf_api"
 GREETING = "Hello, I'm Paige from PaperLeaf Books. How can I help you today?"
@@ -97,10 +95,35 @@ async def chat(req: ChatRequest):
 
 @app.get("/tickets")
 def tickets(status: str | None = None):
-    if not Path(TICKETS_FILE).exists():
-        return []
-    with open(TICKETS_FILE, newline="", encoding="utf-8") as f:
-        rows = list(csv.DictReader(f))
-    if status:
-        rows = [r for r in rows if r.get("status") == status]
-    return list(reversed(rows))
+    return db.list_tickets(status)
+
+
+@app.get("/books")
+def books(q: str | None = None, genre: str | None = None, condition: str | None = None):
+    sql, args = "SELECT * FROM books WHERE 1=1", []
+    if q:
+        sql += " AND (title LIKE ? OR author LIKE ?)"
+        args += [f"%{q}%", f"%{q}%"]
+    if genre:
+        sql += " AND genre = ?"
+        args.append(genre)
+    if condition:
+        sql += " AND condition = ?"
+        args.append(condition)
+    conn = db.get_conn()
+    try:
+        return [dict(r) for r in conn.execute(sql + " ORDER BY title", args).fetchall()]
+    finally:
+        conn.close()
+
+
+@app.get("/books/{book_id}")
+def book(book_id: int):
+    conn = db.get_conn()
+    try:
+        row = conn.execute("SELECT * FROM books WHERE id = ?", (book_id,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(404, "Book not found")
+    return dict(row)
